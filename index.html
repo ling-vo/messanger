@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Simple Messenger</title>
+<style>
+  /* Reset & base */
+  * {
+    box-sizing: border-box;
+  }
+  body, html {
+    margin: 0; padding: 0; height: 100vh;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #f0f2f5;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  #app {
+    display: flex;
+    height: 80vh;
+    width: 90vw;
+    max-width: 1000px;
+    background: white;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  /* Sidebar */
+  #sidebar {
+    width: 250px;
+    background: #4267B2;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    padding: 15px;
+  }
+
+  #usernameLabel {
+    font-weight: bold;
+    margin-bottom: 5px;
+  }
+
+  #usernameInput {
+    width: 100%;
+    padding: 8px;
+    border-radius: 5px;
+    border: none;
+    margin-bottom: 20px;
+    font-size: 1rem;
+  }
+
+  #contactsList {
+    flex-grow: 1;
+    overflow-y: auto;
+    margin-bottom: 15px;
+  }
+
+  .contact {
+    padding: 10px;
+    margin-bottom: 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    background: #365899;
+    transition: background 0.3s;
+  }
+
+  .contact:hover, .contact.active {
+    background: #29487d;
+  }
+
+  #addContactForm {
+    display: flex;
+  }
+
+  #newContactInput {
+    flex-grow: 1;
+    padding: 8px;
+    border-radius: 5px 0 0 5px;
+    border: none;
+    font-size: 1rem;
+  }
+
+  #addContactBtn {
+    padding: 8px 15px;
+    background: #29487d;
+    border: none;
+    color: white;
+    border-radius: 0 5px 5px 0;
+    cursor: pointer;
+    font-weight: bold;
+    transition: background 0.3s;
+  }
+
+  #addContactBtn:hover {
+    background: #1d3260;
+  }
+
+  /* Chat area */
+  #chatArea {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    background: #e9ebee;
+  }
+
+  #chatHeader {
+    font-weight: bold;
+    font-size: 1.2rem;
+    margin-bottom: 15px;
+  }
+
+  #messages {
+    flex-grow: 1;
+    background: white;
+    padding: 15px;
+    border-radius: 10px;
+    overflow-y: auto;
+    box-shadow: inset 0 0 10px #ccc;
+    margin-bottom: 15px;
+  }
+
+  .message {
+    margin-bottom: 10px;
+    padding: 8px 12px;
+    border-radius: 15px;
+    max-width: 70%;
+    word-wrap: break-word;
+    font-size: 0.95rem;
+  }
+
+  .message.sent {
+    background: #0084ff;
+    color: white;
+    align-self: flex-end;
+    border-bottom-right-radius: 0;
+  }
+
+  .message.received {
+    background: #e4e6eb;
+    color: black;
+    align-self: flex-start;
+    border-bottom-left-radius: 0;
+  }
+
+  #inputArea {
+    display: flex;
+  }
+
+  #messageInput {
+    flex-grow: 1;
+    padding: 12px;
+    border-radius: 25px 0 0 25px;
+    border: none;
+    font-size: 1rem;
+  }
+
+  #sendBtn {
+    padding: 12px 20px;
+    border-radius: 0 25px 25px 0;
+    border: none;
+    background: #4267B2;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.3s;
+  }
+
+  #sendBtn:hover {
+    background: #29487d;
+  }
+
+  /* Scrollbar for messages & contacts */
+  #messages::-webkit-scrollbar,
+  #contactsList::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  #messages::-webkit-scrollbar-thumb,
+  #contactsList::-webkit-scrollbar-thumb {
+    background-color: rgba(0,0,0,0.1);
+    border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <label id="usernameLabel" for="usernameInput">Your Username:</label>
+    <input type="text" id="usernameInput" value="User" />
+
+    <div id="contactsList"></div>
+
+    <form id="addContactForm">
+      <input type="text" id="newContactInput" placeholder="Add contact username" autocomplete="off" />
+      <button type="submit" id="addContactBtn">Add</button>
+    </form>
+  </div>
+
+  <div id="chatArea">
+    <div id="chatHeader">Select a contact to start chatting</div>
+    <div id="messages"></div>
+    <div id="inputArea" style="display:none;">
+      <input type="text" id="messageInput" placeholder="Type a message..." autocomplete="off" />
+      <button id="sendBtn">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const usernameInput = document.getElementById('usernameInput');
+  const contactsList = document.getElementById('contactsList');
+  const addContactForm = document.getElementById('addContactForm');
+  const newContactInput = document.getElementById('newContactInput');
+
+  const chatHeader = document.getElementById('chatHeader');
+  const messages = document.getElementById('messages');
+  const inputArea = document.getElementById('inputArea');
+  const messageInput = document.getElementById('messageInput');
+  const sendBtn = document.getElementById('sendBtn');
+
+  let ws;
+  let currentContact = null;
+  let contacts = [];
+  let chatHistory = {}; // contact -> array of messages
+
+  // Connect WebSocket immediately, no registration step
+  function connectWS() {
+    ws = new WebSocket('ws://localhost:8080');
+
+    ws.onopen = () => {
+      console.log('Connected to server');
+      logSystem('Connected to chat server');
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.type === 'message') {
+        const from = data.from;
+        const text = data.text;
+
+        if (!chatHistory[from]) chatHistory[from] = [];
+        chatHistory[from].push({ sender: from, text });
+
+        // Auto-add to contacts if new
+        if (!contacts.includes(from)) {
+          contacts.push(from);
+          renderContacts();
+        }
+
+        if (currentContact === from) {
+          addMessage(from, text, 'received');
+        } else {
+          // Notify user with a visual highlight
+          const contactDiv = document.querySelector(`.contact[data-username="${from}"]`);
+          if (contactDiv) contactDiv.classList.add('unread');
+        }
+      } else if (data.type === 'error') {
+        alert(data.message);
+      }
+    };
+
+    ws.onclose = () => {
+      console.log('Disconnected from server');
+      logSystem('Disconnected from chat server');
+    };
+
+    ws.onerror = (err) => {
+      console.error('WebSocket error:', err);
+      logSystem('WebSocket connection error');
+    };
+  }
+
+  // Utility to log system messages in chat
+  function logSystem(msg) {
+    const div = document.createElement('div');
+    div.style.textAlign = 'center';
+    div.style.color = '#888';
+    div.style.margin = '10px 0';
+    div.textContent = msg;
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  // Render contact list
+  function renderContacts() {
+    contactsList.innerHTML = '';
+    contacts.forEach(contact => {
+      const div = document.createElement('div');
+      div.className = 'contact';
+      div.textContent = contact;
+      div.dataset.username = contact;
+
+      if (contact === currentContact) {
+        div.classList.add('active');
+      }
+
+      div.onclick = () => {
+        selectContact(contact);
+      };
+
+      contactsList.appendChild(div);
+    });
+  }
+
+  // Select contact for chatting
+  function selectContact(contact) {
+    currentContact = contact;
+    chatHeader.textContent = `Chatting with ${contact}`;
+    inputArea.style.display = 'flex';
+    renderContacts();
+    renderMessages(contact);
+
+    // Remove unread highlight
+    const contactDiv = document.querySelector(`.contact[data-username="${contact}"]`);
+    if (contactDiv) contactDiv.classList.remove('unread');
+  }
+
+  // Render messages with a contact
+  function renderMessages(contact) {
+    messages.innerHTML = '';
+    if (!chatHistory[contact]) chatHistory[contact] = [];
+
+    chatHistory[contact].forEach(({ sender, text }) => {
+      const cls = sender === usernameInput.value.trim() ? 'sent' : 'received';
+      addMessage(sender, text, cls, false);
+    });
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  // Add message bubble to chat window
+  function addMessage(sender, text, cls, scroll = true) {
+    const div = document.createElement('div');
+    div.classList.add('message', cls);
+    div.textContent = text;
+    messages.appendChild(div);
+    if (scroll) messages.scrollTop = messages.scrollHeight;
+  }
+
+  // Send message
+  function sendMessage() {
+    const text = messageInput.value.trim();
+    const from = usernameInput.value.trim();
+    if (!currentContact) {
+      alert('Select a contact first!');
+      return;
+    }
+    if (!text) return;
+
+    // Update local history
+    if (!chatHistory[currentContact]) chatHistory[currentContact] = [];
+    chatHistory[currentContact].push({ sender: from, text });
+
+    // Show message locally
+    addMessage(from, text, 'sent');
+
+    // Send to server
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'message', to: currentContact, text, from }));
+    } else {
+      alert('WebSocket not connected');
+    }
+
+    messageInput.value = '';
+    messageInput.focus();
+  }
+
+  // Add new contact
+  addContactForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const newContact = newContactInput.value.trim();
+    if (!newContact) return;
+    if (contacts.includes(newContact)) {
+      alert('Contact already exists');
+      return;
+    }
+    if (newContact === usernameInput.value.trim()) {
+      alert("You can't add yourself as a contact");
+      return;
+    }
+
+    contacts.push(newContact);
+    renderContacts();
+    newContactInput.value = '';
+  });
+
+  sendBtn.addEventListener('click', sendMessage);
+
+  messageInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      sendMessage();
+    }
+  });
+
+  // Reconnect WS if username changes
+  usernameInput.addEventListener('change', () => {
+    if (ws) ws.close();
+    connectWS();
+  });
+
+  // Initial connection
+  connectWS();
+
+</script>
+</body>
+</html>
